@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# pylint: disable=W0613, C0116
+# type: ignore[union-attr]
 # This program is dedicated to the public domain under the CC0 license.
-#
-# THIS EXAMPLE HAS BEEN UPDATED TO WORK WITH THE BETA VERSION 12 OF PYTHON-TELEGRAM-BOT.
-# If you're still using version 11.1.0, please see the examples at
-# https://github.com/python-telegram-bot/python-telegram-bot/tree/v11.1.0/examples
 
 """
 First, a few callback functions are defined. Then, those functions are passed to
@@ -19,26 +17,36 @@ bot.
 """
 
 import logging
+from typing import Dict
 
-from telegram import ReplyKeyboardMarkup
-from telegram.ext import (Updater, CommandHandler, MessageHandler, Filters, RegexHandler,
-                          ConversationHandler)
+from telegram import ReplyKeyboardMarkup, Update
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    Filters,
+    ConversationHandler,
+    CallbackContext,
+)
 
 # Enable logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
 
 logger = logging.getLogger(__name__)
 
 CHOOSING, TYPING_REPLY, TYPING_CHOICE = range(3)
 
-reply_keyboard = [['Age', 'Favourite colour'],
-                  ['Number of siblings', 'Something else...'],
-                  ['Done']]
+reply_keyboard = [
+    ['Age', 'Favourite colour'],
+    ['Number of siblings', 'Something else...'],
+    ['Done'],
+]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
 
 
-def facts_to_str(user_data):
+def facts_to_str(user_data: Dict[str, str]) -> str:
     facts = list()
 
     for key, value in user_data.items():
@@ -47,103 +55,99 @@ def facts_to_str(user_data):
     return "\n".join(facts).join(['\n', '\n'])
 
 
-def start(update, context):
+def start(update: Update, context: CallbackContext) -> int:
     update.message.reply_text(
         "Hi! My name is Doctor Botter. I will hold a more complex conversation with you. "
         "Why don't you tell me something about yourself?",
-        reply_markup=markup)
+        reply_markup=markup,
+    )
 
     return CHOOSING
 
 
-def regular_choice(update, context):
+def regular_choice(update: Update, context: CallbackContext) -> int:
     text = update.message.text
     context.user_data['choice'] = text
     update.message.reply_text(
-        'Your {}? Yes, I would love to hear about that!'.format(text.lower()))
+        'Your {}? Yes, I would love to hear about that!'.format(text.lower())
+    )
 
     return TYPING_REPLY
 
 
-def custom_choice(update, context):
-    update.message.reply_text('Alright, please send me the category first, '
-                              'for example "Most impressive skill"')
+def custom_choice(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text(
+        'Alright, please send me the category first, ' 'for example "Most impressive skill"'
+    )
 
     return TYPING_CHOICE
 
 
-def received_information(update, context):
+def received_information(update: Update, context: CallbackContext) -> int:
     user_data = context.user_data
     text = update.message.text
     category = user_data['choice']
     user_data[category] = text
     del user_data['choice']
 
-    update.message.reply_text("Neat! Just so you know, this is what you already told me:"
-                              "{}"
-                              "You can tell me more, or change your opinion on something.".format(
-                                  facts_to_str(user_data)), reply_markup=markup)
+    update.message.reply_text(
+        "Neat! Just so you know, this is what you already told me:"
+        "{} You can tell me more, or change your opinion"
+        " on something.".format(facts_to_str(user_data)),
+        reply_markup=markup,
+    )
 
     return CHOOSING
 
 
-def done(update, context):
+def done(update: Update, context: CallbackContext) -> int:
     user_data = context.user_data
     if 'choice' in user_data:
         del user_data['choice']
 
-    update.message.reply_text("I learned these facts about you:"
-                              "{}"
-                              "Until next time!".format(facts_to_str(user_data)))
+    update.message.reply_text(
+        "I learned these facts about you:" "{}" "Until next time!".format(facts_to_str(user_data))
+    )
 
     user_data.clear()
     return ConversationHandler.END
 
 
-def error(update, context):
-    """Log Errors caused by Updates."""
-    logger.warning('Update "%s" caused error "%s"', update, error)
-
-
-def main():
+def main() -> None:
     # Create the Updater and pass it your bot's token.
     # Make sure to set use_context=True to use the new context based callbacks
     # Post version 12 this will no longer be necessary
     updater = Updater("TOKEN", use_context=True)
 
     # Get the dispatcher to register handlers
-    dp = updater.dispatcher
+    dispatcher = updater.dispatcher
 
     # Add conversation handler with the states CHOOSING, TYPING_CHOICE and TYPING_REPLY
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
-
         states={
-            CHOOSING: [RegexHandler('^(Age|Favourite colour|Number of siblings)$',
-                                    regular_choice,
-                                    pass_user_data=True),
-                       RegexHandler('^Something else...$',
-                                    custom_choice),
-                       ],
-
-            TYPING_CHOICE: [MessageHandler(Filters.text,
-                                           regular_choice,
-                                           pass_user_data=True),
-                            ],
-
-            TYPING_REPLY: [MessageHandler(Filters.text,
-                                          received_information,
-                                          pass_user_data=True),
-                           ],
+            CHOOSING: [
+                MessageHandler(
+                    Filters.regex('^(Age|Favourite colour|Number of siblings)$'), regular_choice
+                ),
+                MessageHandler(Filters.regex('^Something else...$'), custom_choice),
+            ],
+            TYPING_CHOICE: [
+                MessageHandler(
+                    Filters.text & ~(Filters.command | Filters.regex('^Done$')), regular_choice
+                )
+            ],
+            TYPING_REPLY: [
+                MessageHandler(
+                    Filters.text & ~(Filters.command | Filters.regex('^Done$')),
+                    received_information,
+                )
+            ],
         },
-
-        fallbacks=[RegexHandler('^Done$', done, pass_user_data=True)]
+        fallbacks=[MessageHandler(Filters.regex('^Done$'), done)],
     )
 
-    dp.add_handler(conv_handler)
-
-    # log all errors
-    dp.add_error_handler(error)
+    dispatcher.add_handler(conv_handler)
 
     # Start the Bot
     updater.start_polling()

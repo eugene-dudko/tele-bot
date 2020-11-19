@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -22,6 +22,7 @@ import pytest
 from flaky import flaky
 
 from telegram import Audio, Voice, TelegramError
+from telegram.utils.helpers import escape_markdown
 
 
 @pytest.fixture(scope='function')
@@ -37,7 +38,7 @@ def voice(bot, chat_id):
         return bot.send_voice(chat_id, voice=f, timeout=50).voice
 
 
-class TestVoice(object):
+class TestVoice:
     duration = 3
     mime_type = 'audio/ogg'
     file_size = 9199
@@ -45,11 +46,16 @@ class TestVoice(object):
     caption = u'Test *voice*'
     voice_file_url = 'https://python-telegram-bot.org/static/testfiles/telegram.ogg'
 
+    voice_file_id = '5a3128a4d2a04750b5b58397f3b5e812'
+    voice_file_unique_id = 'adc3145fd2e84d95b64d68eaa22aa33e'
+
     def test_creation(self, voice):
         # Make sure file has been uploaded.
         assert isinstance(voice, Voice)
         assert isinstance(voice.file_id, str)
+        assert isinstance(voice.file_unique_id, str)
         assert voice.file_id != ''
+        assert voice.file_unique_id != ''
 
     def test_expected_values(self, voice):
         assert voice.duration == self.duration
@@ -59,13 +65,20 @@ class TestVoice(object):
     @flaky(3, 1)
     @pytest.mark.timeout(10)
     def test_send_all_args(self, bot, chat_id, voice_file, voice):
-        message = bot.send_voice(chat_id, voice_file, duration=self.duration,
-                                 caption=self.caption, disable_notification=False,
-                                 parse_mode='Markdown')
+        message = bot.send_voice(
+            chat_id,
+            voice_file,
+            duration=self.duration,
+            caption=self.caption,
+            disable_notification=False,
+            parse_mode='Markdown',
+        )
 
         assert isinstance(message.voice, Voice)
         assert isinstance(message.voice.file_id, str)
+        assert isinstance(message.voice.file_unique_id, str)
         assert message.voice.file_id != ''
+        assert message.voice.file_unique_id != ''
         assert message.voice.duration == voice.duration
         assert message.voice.mime_type == voice.mime_type
         assert message.voice.file_size == voice.file_size
@@ -78,6 +91,7 @@ class TestVoice(object):
 
         assert new_file.file_size == voice.file_size
         assert new_file.file_id == voice.file_id
+        assert new_file.file_unique_id == voice.file_unique_id
         assert new_file.file_path.startswith('https://')
 
         new_file.download('telegram.ogg')
@@ -91,7 +105,9 @@ class TestVoice(object):
 
         assert isinstance(message.voice, Voice)
         assert isinstance(message.voice.file_id, str)
+        assert isinstance(message.voice.file_unique_id, str)
         assert message.voice.file_id != ''
+        assert message.voice.file_unique_id != ''
         assert message.voice.duration == voice.duration
         assert message.voice.mime_type == voice.mime_type
         assert message.voice.file_size == voice.file_size
@@ -104,24 +120,61 @@ class TestVoice(object):
         assert message.voice == voice
 
     def test_send_with_voice(self, monkeypatch, bot, chat_id, voice):
-        def test(_, url, data, **kwargs):
+        def test(url, data, **kwargs):
             return data['voice'] == voice.file_id
 
-        monkeypatch.setattr('telegram.utils.request.Request.post', test)
+        monkeypatch.setattr(bot.request, 'post', test)
         message = bot.send_voice(chat_id, voice=voice)
         assert message
 
+    @flaky(3, 1)
+    @pytest.mark.timeout(10)
+    @pytest.mark.parametrize('default_bot', [{'parse_mode': 'Markdown'}], indirect=True)
+    def test_send_voice_default_parse_mode_1(self, default_bot, chat_id, voice):
+        test_string = 'Italic Bold Code'
+        test_markdown_string = '_Italic_ *Bold* `Code`'
+
+        message = default_bot.send_voice(chat_id, voice, caption=test_markdown_string)
+        assert message.caption_markdown == test_markdown_string
+        assert message.caption == test_string
+
+    @flaky(3, 1)
+    @pytest.mark.timeout(10)
+    @pytest.mark.parametrize('default_bot', [{'parse_mode': 'Markdown'}], indirect=True)
+    def test_send_voice_default_parse_mode_2(self, default_bot, chat_id, voice):
+        test_markdown_string = '_Italic_ *Bold* `Code`'
+
+        message = default_bot.send_voice(
+            chat_id, voice, caption=test_markdown_string, parse_mode=None
+        )
+        assert message.caption == test_markdown_string
+        assert message.caption_markdown == escape_markdown(test_markdown_string)
+
+    @flaky(3, 1)
+    @pytest.mark.timeout(10)
+    @pytest.mark.parametrize('default_bot', [{'parse_mode': 'Markdown'}], indirect=True)
+    def test_send_voice_default_parse_mode_3(self, default_bot, chat_id, voice):
+        test_markdown_string = '_Italic_ *Bold* `Code`'
+
+        message = default_bot.send_voice(
+            chat_id, voice, caption=test_markdown_string, parse_mode='HTML'
+        )
+        assert message.caption == test_markdown_string
+        assert message.caption_markdown == escape_markdown(test_markdown_string)
+
     def test_de_json(self, bot):
         json_dict = {
-            'file_id': 'not a file id',
+            'file_id': self.voice_file_id,
+            'file_unique_id': self.voice_file_unique_id,
             'duration': self.duration,
             'caption': self.caption,
             'mime_type': self.mime_type,
-            'file_size': self.file_size
+            'file_size': self.file_size,
         }
         json_voice = Voice.de_json(json_dict, bot)
 
-        assert json_voice.file_id == 'not a file id'
+        assert json_voice.file_id == self.voice_file_id
+        assert json_voice.file_unique_id == self.voice_file_unique_id
         assert json_voice.duration == self.duration
         assert json_voice.mime_type == self.mime_type
         assert json_voice.file_size == self.file_size
@@ -131,6 +184,7 @@ class TestVoice(object):
 
         assert isinstance(voice_dict, dict)
         assert voice_dict['file_id'] == voice.file_id
+        assert voice_dict['file_unique_id'] == voice.file_unique_id
         assert voice_dict['duration'] == voice.duration
         assert voice_dict['mime_type'] == voice.mime_type
         assert voice_dict['file_size'] == voice.file_size
@@ -159,11 +213,11 @@ class TestVoice(object):
         assert voice.get_file()
 
     def test_equality(self, voice):
-        a = Voice(voice.file_id, self.duration)
-        b = Voice(voice.file_id, self.duration)
-        c = Voice(voice.file_id, 0)
-        d = Voice('', self.duration)
-        e = Audio(voice.file_id, self.duration)
+        a = Voice(voice.file_id, voice.file_unique_id, self.duration)
+        b = Voice('', voice.file_unique_id, self.duration)
+        c = Voice(voice.file_id, voice.file_unique_id, 0)
+        d = Voice('', '', self.duration)
+        e = Audio(voice.file_id, voice.file_unique_id, self.duration)
 
         assert a == b
         assert hash(a) == hash(b)

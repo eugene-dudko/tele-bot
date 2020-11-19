@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,7 +18,12 @@
 # along with this program.  If not, see [http://www.gnu.org/licenses/].
 """This module contains the classes that represent Telegram InlineQueryResultVenue."""
 
+from typing import TYPE_CHECKING, Any
+
 from telegram import InlineQueryResult
+
+if TYPE_CHECKING:
+    from telegram import InputMessageContent, ReplyMarkup
 
 
 class InlineQueryResultVenue(InlineQueryResult):
@@ -67,40 +72,35 @@ class InlineQueryResultVenue(InlineQueryResult):
 
     """
 
-    def __init__(self,
-                 id,
-                 latitude,
-                 longitude,
-                 title,
-                 address,
-                 foursquare_id=None,
-                 foursquare_type=None,
-                 reply_markup=None,
-                 input_message_content=None,
-                 thumb_url=None,
-                 thumb_width=None,
-                 thumb_height=None,
-                 **kwargs):
+    def __init__(
+        self,
+        id: str,  # pylint: disable=W0622
+        latitude: float,
+        longitude: float,
+        title: str,
+        address: str,
+        foursquare_id: str = None,
+        foursquare_type: str = None,
+        reply_markup: 'ReplyMarkup' = None,
+        input_message_content: 'InputMessageContent' = None,
+        thumb_url: str = None,
+        thumb_width: int = None,
+        thumb_height: int = None,
+        **_kwargs: Any,
+    ):
 
         # Required
-        super(InlineQueryResultVenue, self).__init__('venue', id)
+        super().__init__('venue', id)
         self.latitude = latitude
         self.longitude = longitude
         self.title = title
         self.address = address
 
         # Optional
-        if foursquare_id:
-            self.foursquare_id = foursquare_id
-        if foursquare_type:
-            self.foursquare_type = foursquare_type
-        if reply_markup:
-            self.reply_markup = reply_markup
-        if input_message_content:
-            self.input_message_content = input_message_content
-        if thumb_url:
-            self.thumb_url = thumb_url
-        if thumb_width:
-            self.thumb_width = thumb_width
-        if thumb_height:
-            self.thumb_height = thumb_height
+        self.foursquare_id = foursquare_id
+        self.foursquare_type = foursquare_type
+        self.reply_markup = reply_markup
+        self.input_message_content = input_message_content
+        self.thumb_url = thumb_url
+        self.thumb_width = thumb_width
+        self.thumb_height = thumb_height

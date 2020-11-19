@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -25,11 +25,16 @@ from telegram import LabeledPrice, Invoice
 
 @pytest.fixture(scope='class')
 def invoice():
-    return Invoice(TestInvoice.title, TestInvoice.description, TestInvoice.start_parameter,
-                   TestInvoice.currency, TestInvoice.total_amount)
+    return Invoice(
+        TestInvoice.title,
+        TestInvoice.description,
+        TestInvoice.start_parameter,
+        TestInvoice.currency,
+        TestInvoice.total_amount,
+    )
 
 
-class TestInvoice(object):
+class TestInvoice:
     payload = 'payload'
     prices = [LabeledPrice('Fish', 100), LabeledPrice('Fish Tax', 1000)]
     provider_data = """{"test":"test"}"""
@@ -40,13 +45,16 @@ class TestInvoice(object):
     total_amount = sum([p.amount for p in prices])
 
     def test_de_json(self, bot):
-        invoice_json = Invoice.de_json({
-            'title': TestInvoice.title,
-            'description': TestInvoice.description,
-            'start_parameter': TestInvoice.start_parameter,
-            'currency': TestInvoice.currency,
-            'total_amount': TestInvoice.total_amount
-        }, bot)
+        invoice_json = Invoice.de_json(
+            {
+                'title': TestInvoice.title,
+                'description': TestInvoice.description,
+                'start_parameter': TestInvoice.start_parameter,
+                'currency': TestInvoice.currency,
+                'total_amount': TestInvoice.total_amount,
+            },
+            bot,
+        )
 
         assert invoice_json.title == self.title
         assert invoice_json.description == self.description
@@ -67,9 +75,16 @@ class TestInvoice(object):
     @flaky(3, 1)
     @pytest.mark.timeout(10)
     def test_send_required_args_only(self, bot, chat_id, provider_token):
-        message = bot.send_invoice(chat_id, self.title, self.description, self.payload,
-                                   provider_token, self.start_parameter, self.currency,
-                                   self.prices)
+        message = bot.send_invoice(
+            chat_id,
+            self.title,
+            self.description,
+            self.payload,
+            provider_token,
+            self.start_parameter,
+            self.currency,
+            self.prices,
+        )
 
         assert message.invoice.currency == self.currency
         assert message.invoice.start_parameter == self.start_parameter
@@ -91,8 +106,8 @@ class TestInvoice(object):
             self.prices,
             provider_data=self.provider_data,
             photo_url='https://raw.githubusercontent.com/'
-                      'python-telegram-bot/logos/master/'
-                      'logo/png/ptb-logo_240.png',
+            'python-telegram-bot/logos/master/'
+            'logo/png/ptb-logo_240.png',
             photo_size=240,
             photo_width=240,
             photo_height=240,
@@ -102,7 +117,8 @@ class TestInvoice(object):
             need_shipping_address=True,
             send_phone_number_to_provider=True,
             send_email_to_provider=True,
-            is_flexible=True)
+            is_flexible=True,
+        )
 
         assert message.invoice.currency == self.currency
         assert message.invoice.start_parameter == self.start_parameter
@@ -111,12 +127,37 @@ class TestInvoice(object):
         assert message.invoice.total_amount == self.total_amount
 
     def test_send_object_as_provider_data(self, monkeypatch, bot, chat_id, provider_token):
-        def test(_, url, data, **kwargs):
-            return (data['provider_data'] == '{"test_data": 123456789}'  # Depends if using
-                    or data['provider_data'] == '{"test_data":123456789}')  # ujson or not
+        def test(url, data, **kwargs):
+            return (
+                data['provider_data'] == '{"test_data": 123456789}'  # Depends if using
+                or data['provider_data'] == '{"test_data":123456789}'
+            )  # ujson or not
 
-        monkeypatch.setattr('telegram.utils.request.Request.post', test)
+        monkeypatch.setattr(bot.request, 'post', test)
 
-        assert bot.send_invoice(chat_id, self.title, self.description, self.payload,
-                                provider_token, self.start_parameter, self.currency,
-                                self.prices, provider_data={'test_data': 123456789})
+        assert bot.send_invoice(
+            chat_id,
+            self.title,
+            self.description,
+            self.payload,
+            provider_token,
+            self.start_parameter,
+            self.currency,
+            self.prices,
+            provider_data={'test_data': 123456789},
+        )
+
+    def test_equality(self):
+        a = Invoice('invoice', 'desc', 'start', 'EUR', 7)
+        b = Invoice('invoice', 'desc', 'start', 'EUR', 7)
+        c = Invoice('invoices', 'description', 'stop', 'USD', 8)
+        d = LabeledPrice('label', 5)
+
+        assert a == b
+        assert hash(a) == hash(b)
+
+        assert a != c
+        assert hash(a) != hash(c)
+
+        assert a != d
+        assert hash(a) != hash(d)

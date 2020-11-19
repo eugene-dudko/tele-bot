@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,16 +18,24 @@
 # along with this program.  If not, see [http://www.gnu.org/licenses/].
 """This module contains the classes that represent Telegram InputLocationMessageContent."""
 
+from typing import Any
+
 from telegram import InputMessageContent
 
 
 class InputLocationMessageContent(InputMessageContent):
+    # fmt: off
     """
     Represents the content of a location message to be sent as the result of an inline query.
+
+    Objects of this class are comparable in terms of equality. Two objects of this class are
+    considered equal, if their :attr:`latitude` and :attr:`longitude` are equal.
 
     Attributes:
         latitude (:obj:`float`): Latitude of the location in degrees.
         longitude (:obj:`float`): Longitude of the location in degrees.
+        live_period	(:obj:`int`): Optional. Period in seconds for which the location can be
+            updated.
 
     Args:
         latitude (:obj:`float`): Latitude of the location in degrees.
@@ -37,9 +45,12 @@ class InputLocationMessageContent(InputMessageContent):
         **kwargs (:obj:`dict`): Arbitrary keyword arguments.
 
     """
+    # fmt: on
 
-    def __init__(self, latitude, longitude, live_period=None, **kwargs):
+    def __init__(self, latitude: float, longitude: float, live_period: int = None, **_kwargs: Any):
         # Required
         self.latitude = latitude
         self.longitude = longitude
         self.live_period = live_period
+
+        self._id_attrs = (self.latitude, self.longitude)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,11 +18,16 @@
 # along with this program.  If not, see [http://www.gnu.org/licenses/].
 """This module contains an object that represents a Telegram Location."""
 
+from typing import Any
+
 from telegram import TelegramObject
 
 
 class Location(TelegramObject):
     """This object represents a point on the map.
+
+    Objects of this class are comparable in terms of equality. Two objects of this class are
+    considered equal, if their :attr:`longitute` and :attr:`latitude` are equal.
 
     Attributes:
         longitude (:obj:`float`): Longitude as defined by sender.
@@ -35,16 +40,9 @@ class Location(TelegramObject):
 
     """
 
-    def __init__(self, longitude, latitude, **kwargs):
+    def __init__(self, longitude: float, latitude: float, **_kwargs: Any):
         # Required
         self.longitude = float(longitude)
         self.latitude = float(latitude)
 
         self._id_attrs = (self.longitude, self.latitude)
-
-    @classmethod
-    def de_json(cls, data, bot):
-        if not data:
-            return None
-
-        return cls(**data)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -19,10 +19,12 @@
 """A library that provides a Python interface to the Telegram Bot API"""
 
 from .base import TelegramObject
+from .botcommand import BotCommand
 from .user import User
 from .files.chatphoto import ChatPhoto
 from .chat import Chat
 from .chatmember import ChatMember
+from .chatpermissions import ChatPermissions
 from .files.photosize import PhotoSize
 from .files.audio import Audio
 from .files.voice import Voice
@@ -35,8 +37,10 @@ from .files.location import Location
 from .files.venue import Venue
 from .files.videonote import VideoNote
 from .chataction import ChatAction
+from .dice import Dice
 from .userprofilephotos import UserProfilePhotos
 from .keyboardbutton import KeyboardButton
+from .keyboardbuttonpolltype import KeyboardButtonPollType
 from .replymarkup import ReplyMarkup
 from .replykeyboardmarkup import ReplyKeyboardMarkup
 from .replykeyboardremove import ReplyKeyboardRemove
@@ -47,7 +51,7 @@ from .files.file import File
 from .parsemode import ParseMode
 from .messageentity import MessageEntity
 from .games.game import Game
-from .poll import Poll, PollOption
+from .poll import Poll, PollOption, PollAnswer
 from .loginurl import LoginUrl
 from .games.callbackgame import CallbackGame
 from .payment.shippingaddress import ShippingAddress
@@ -98,62 +102,170 @@ from .payment.shippingquery import ShippingQuery
 from .webhookinfo import WebhookInfo
 from .games.gamehighscore import GameHighScore
 from .update import Update
-from .files.inputmedia import (InputMedia, InputMediaVideo, InputMediaPhoto, InputMediaAnimation,
-                               InputMediaAudio, InputMediaDocument)
+from .files.inputmedia import (
+    InputMedia,
+    InputMediaVideo,
+    InputMediaPhoto,
+    InputMediaAnimation,
+    InputMediaAudio,
+    InputMediaDocument,
+)
+from .constants import (
+    MAX_MESSAGE_LENGTH,
+    MAX_CAPTION_LENGTH,
+    SUPPORTED_WEBHOOK_PORTS,
+    MAX_FILESIZE_DOWNLOAD,
+    MAX_FILESIZE_UPLOAD,
+    MAX_MESSAGES_PER_SECOND_PER_CHAT,
+    MAX_MESSAGES_PER_SECOND,
+    MAX_MESSAGES_PER_MINUTE_PER_GROUP,
+)
+from .passport.passportelementerrors import (
+    PassportElementError,
+    PassportElementErrorDataField,
+    PassportElementErrorFile,
+    PassportElementErrorFiles,
+    PassportElementErrorFrontSide,
+    PassportElementErrorReverseSide,
+    PassportElementErrorSelfie,
+    PassportElementErrorTranslationFile,
+    PassportElementErrorTranslationFiles,
+    PassportElementErrorUnspecified,
+)
+from .passport.credentials import (
+    Credentials,
+    DataCredentials,
+    SecureData,
+    FileCredentials,
+    TelegramDecryptionError,
+)
 from .bot import Bot
-from .constants import (MAX_MESSAGE_LENGTH, MAX_CAPTION_LENGTH, SUPPORTED_WEBHOOK_PORTS,
-                        MAX_FILESIZE_DOWNLOAD, MAX_FILESIZE_UPLOAD,
-                        MAX_MESSAGES_PER_SECOND_PER_CHAT, MAX_MESSAGES_PER_SECOND,
-                        MAX_MESSAGES_PER_MINUTE_PER_GROUP)
-from .passport.passportelementerrors import (PassportElementError,
-                                             PassportElementErrorDataField,
-                                             PassportElementErrorFile,
-                                             PassportElementErrorFiles,
-                                             PassportElementErrorFrontSide,
-                                             PassportElementErrorReverseSide,
-                                             PassportElementErrorSelfie,
-                                             PassportElementErrorTranslationFile,
-                                             PassportElementErrorTranslationFiles,
-                                             PassportElementErrorUnspecified)
-from .passport.credentials import (Credentials,
-                                   DataCredentials,
-                                   SecureData,
-                                   FileCredentials,
-                                   TelegramDecryptionError)
 from .version import __version__  # noqa: F401
 
 __author__ = 'devs@python-telegram-bot.org'
 
 __all__ = [
-    'Audio', 'Bot', 'Chat', 'ChatMember', 'ChatAction', 'ChosenInlineResult', 'CallbackQuery',
-    'Contact', 'Document', 'File', 'ForceReply', 'InlineKeyboardButton',
-    'InlineKeyboardMarkup', 'InlineQuery', 'InlineQueryResult', 'InlineQueryResult',
-    'InlineQueryResultArticle', 'InlineQueryResultAudio', 'InlineQueryResultCachedAudio',
-    'InlineQueryResultCachedDocument', 'InlineQueryResultCachedGif',
-    'InlineQueryResultCachedMpeg4Gif', 'InlineQueryResultCachedPhoto',
-    'InlineQueryResultCachedSticker', 'InlineQueryResultCachedVideo',
-    'InlineQueryResultCachedVoice', 'InlineQueryResultContact', 'InlineQueryResultDocument',
-    'InlineQueryResultGif', 'InlineQueryResultLocation', 'InlineQueryResultMpeg4Gif',
-    'InlineQueryResultPhoto', 'InlineQueryResultVenue', 'InlineQueryResultVideo',
-    'InlineQueryResultVoice', 'InlineQueryResultGame', 'InputContactMessageContent', 'InputFile',
-    'InputLocationMessageContent', 'InputMessageContent', 'InputTextMessageContent',
-    'InputVenueMessageContent', 'KeyboardButton', 'Location', 'EncryptedCredentials',
-    'PassportFile', 'EncryptedPassportElement', 'PassportData', 'Message', 'MessageEntity',
-    'ParseMode', 'PhotoSize', 'ReplyKeyboardRemove', 'ReplyKeyboardMarkup', 'ReplyMarkup',
-    'Sticker', 'TelegramError', 'TelegramObject', 'Update', 'User', 'UserProfilePhotos', 'Venue',
-    'Video', 'Voice', 'MAX_MESSAGE_LENGTH', 'MAX_CAPTION_LENGTH', 'SUPPORTED_WEBHOOK_PORTS',
-    'MAX_FILESIZE_DOWNLOAD', 'MAX_FILESIZE_UPLOAD', 'MAX_MESSAGES_PER_SECOND_PER_CHAT',
-    'MAX_MESSAGES_PER_SECOND', 'MAX_MESSAGES_PER_MINUTE_PER_GROUP', 'WebhookInfo', 'Animation',
-    'Game', 'GameHighScore', 'VideoNote', 'LabeledPrice', 'SuccessfulPayment', 'ShippingOption',
-    'ShippingAddress', 'PreCheckoutQuery', 'OrderInfo', 'Invoice', 'ShippingQuery', 'ChatPhoto',
-    'StickerSet', 'MaskPosition', 'CallbackGame', 'InputMedia', 'InputMediaPhoto',
-    'InputMediaVideo', 'PassportElementError', 'PassportElementErrorFile',
-    'PassportElementErrorReverseSide', 'PassportElementErrorFrontSide',
-    'PassportElementErrorFiles', 'PassportElementErrorDataField', 'PassportElementErrorFile',
-    'Credentials', 'DataCredentials', 'SecureData', 'FileCredentials', 'IdDocumentData',
-    'PersonalDetails', 'ResidentialAddress', 'InputMediaVideo', 'InputMediaAnimation',
-    'InputMediaAudio', 'InputMediaDocument', 'TelegramDecryptionError',
-    'PassportElementErrorSelfie', 'PassportElementErrorTranslationFile',
-    'PassportElementErrorTranslationFiles', 'PassportElementErrorUnspecified', 'Poll',
-    'PollOption', 'LoginUrl'
+    'Audio',
+    'Bot',
+    'Chat',
+    'ChatMember',
+    'ChatPermissions',
+    'ChatAction',
+    'ChosenInlineResult',
+    'CallbackQuery',
+    'Contact',
+    'Document',
+    'File',
+    'ForceReply',
+    'InlineKeyboardButton',
+    'InlineKeyboardMarkup',
+    'InlineQuery',
+    'InlineQueryResult',
+    'InlineQueryResult',
+    'InlineQueryResultArticle',
+    'InlineQueryResultAudio',
+    'InlineQueryResultCachedAudio',
+    'InlineQueryResultCachedDocument',
+    'InlineQueryResultCachedGif',
+    'InlineQueryResultCachedMpeg4Gif',
+    'InlineQueryResultCachedPhoto',
+    'InlineQueryResultCachedSticker',
+    'InlineQueryResultCachedVideo',
+    'InlineQueryResultCachedVoice',
+    'InlineQueryResultContact',
+    'InlineQueryResultDocument',
+    'InlineQueryResultGif',
+    'InlineQueryResultLocation',
+    'InlineQueryResultMpeg4Gif',
+    'InlineQueryResultPhoto',
+    'InlineQueryResultVenue',
+    'InlineQueryResultVideo',
+    'InlineQueryResultVoice',
+    'InlineQueryResultGame',
+    'InputContactMessageContent',
+    'InputFile',
+    'InputLocationMessageContent',
+    'InputMessageContent',
+    'InputTextMessageContent',
+    'InputVenueMessageContent',
+    'Location',
+    'EncryptedCredentials',
+    'PassportFile',
+    'EncryptedPassportElement',
+    'PassportData',
+    'Message',
+    'MessageEntity',
+    'ParseMode',
+    'PhotoSize',
+    'ReplyKeyboardRemove',
+    'ReplyKeyboardMarkup',
+    'ReplyMarkup',
+    'Sticker',
+    'TelegramError',
+    'TelegramObject',
+    'Update',
+    'User',
+    'UserProfilePhotos',
+    'Venue',
+    'Video',
+    'Voice',
+    'MAX_MESSAGE_LENGTH',
+    'MAX_CAPTION_LENGTH',
+    'SUPPORTED_WEBHOOK_PORTS',
+    'MAX_FILESIZE_DOWNLOAD',
+    'MAX_FILESIZE_UPLOAD',
+    'MAX_MESSAGES_PER_SECOND_PER_CHAT',
+    'MAX_MESSAGES_PER_SECOND',
+    'MAX_MESSAGES_PER_MINUTE_PER_GROUP',
+    'WebhookInfo',
+    'Animation',
+    'Game',
+    'GameHighScore',
+    'VideoNote',
+    'LabeledPrice',
+    'SuccessfulPayment',
+    'ShippingOption',
+    'ShippingAddress',
+    'PreCheckoutQuery',
+    'OrderInfo',
+    'Invoice',
+    'ShippingQuery',
+    'ChatPhoto',
+    'StickerSet',
+    'MaskPosition',
+    'CallbackGame',
+    'InputMedia',
+    'InputMediaPhoto',
+    'InputMediaVideo',
+    'PassportElementError',
+    'PassportElementErrorFile',
+    'PassportElementErrorReverseSide',
+    'PassportElementErrorFrontSide',
+    'PassportElementErrorFiles',
+    'PassportElementErrorDataField',
+    'PassportElementErrorFile',
+    'Credentials',
+    'DataCredentials',
+    'SecureData',
+    'FileCredentials',
+    'IdDocumentData',
+    'PersonalDetails',
+    'ResidentialAddress',
+    'InputMediaVideo',
+    'InputMediaAnimation',
+    'InputMediaAudio',
+    'InputMediaDocument',
+    'TelegramDecryptionError',
+    'PassportElementErrorSelfie',
+    'PassportElementErrorTranslationFile',
+    'PassportElementErrorTranslationFiles',
+    'PassportElementErrorUnspecified',
+    'Poll',
+    'PollOption',
+    'PollAnswer',
+    'LoginUrl',
+    'KeyboardButton',
+    'KeyboardButtonPollType',
+    'Dice',
+    'BotCommand',
 ]

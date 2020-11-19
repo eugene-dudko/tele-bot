@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,11 +18,20 @@
 # along with this program.  If not, see [http://www.gnu.org/licenses/].
 """This module contains an object that represents a Telegram Venue."""
 
-from telegram import TelegramObject, Location
+from typing import TYPE_CHECKING, Any, Optional
+
+from telegram import Location, TelegramObject
+from telegram.utils.types import JSONDict
+
+if TYPE_CHECKING:
+    from telegram import Bot
 
 
 class Venue(TelegramObject):
     """This object represents a venue.
+
+    Objects of this class are comparable in terms of equality. Two objects of this class are
+    considered equal, if their :attr:`location` and :attr:`title` are equal.
 
     Attributes:
         location (:class:`telegram.Location`): Venue location.
@@ -43,8 +52,15 @@ class Venue(TelegramObject):
 
     """
 
-    def __init__(self, location, title, address, foursquare_id=None, foursquare_type=None,
-                 **kwargs):
+    def __init__(
+        self,
+        location: Location,
+        title: str,
+        address: str,
+        foursquare_id: str = None,
+        foursquare_type: str = None,
+        **_kwargs: Any,
+    ):
         # Required
         self.location = location
         self.title = title
@@ -56,8 +72,8 @@ class Venue(TelegramObject):
         self._id_attrs = (self.location, self.title)
 
     @classmethod
-    def de_json(cls, data, bot):
-        data = super(Venue, cls).de_json(data, bot)
+    def de_json(cls, data: Optional[JSONDict], bot: 'Bot') -> Optional['Venue']:
+        data = cls.parse_data(data)
 
         if not data:
             return None

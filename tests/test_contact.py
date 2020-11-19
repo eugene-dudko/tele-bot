@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -24,11 +24,15 @@ from telegram import Contact, Voice
 
 @pytest.fixture(scope='class')
 def contact():
-    return Contact(TestContact.phone_number, TestContact.first_name, TestContact.last_name,
-                   TestContact.user_id)
+    return Contact(
+        TestContact.phone_number,
+        TestContact.first_name,
+        TestContact.last_name,
+        TestContact.user_id,
+    )
 
 
-class TestContact(object):
+class TestContact:
     phone_number = '+11234567890'
     first_name = 'Leandro'
     last_name = 'Toledo'
@@ -42,8 +46,12 @@ class TestContact(object):
         assert contact.first_name == self.first_name
 
     def test_de_json_all(self, bot):
-        json_dict = {'phone_number': self.phone_number, 'first_name': self.first_name,
-                     'last_name': self.last_name, 'user_id': self.user_id}
+        json_dict = {
+            'phone_number': self.phone_number,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'user_id': self.user_id,
+        }
         contact = Contact.de_json(json_dict, bot)
 
         assert contact.phone_number == self.phone_number
@@ -52,13 +60,13 @@ class TestContact(object):
         assert contact.user_id == self.user_id
 
     def test_send_with_contact(self, monkeypatch, bot, chat_id, contact):
-        def test(_, url, data, **kwargs):
+        def test(url, data, **kwargs):
             phone = data['phone_number'] == contact.phone_number
             first = data['first_name'] == contact.first_name
             last = data['last_name'] == contact.last_name
             return phone and first and last
 
-        monkeypatch.setattr('telegram.utils.request.Request.post', test)
+        monkeypatch.setattr(bot.request, 'post', test)
         message = bot.send_contact(contact=contact, chat_id=chat_id)
         assert message
 
@@ -80,7 +88,7 @@ class TestContact(object):
         b = Contact(self.phone_number, self.first_name)
         c = Contact(self.phone_number, '')
         d = Contact('', self.first_name)
-        e = Voice('', 0)
+        e = Voice('', 'unique_id', 0)
 
         assert a == b
         assert hash(a) == hash(b)

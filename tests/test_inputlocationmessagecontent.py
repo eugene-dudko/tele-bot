@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -19,17 +19,19 @@
 
 import pytest
 
-from telegram import InputLocationMessageContent
+from telegram import InputLocationMessageContent, Location
 
 
 @pytest.fixture(scope='class')
 def input_location_message_content():
-    return InputLocationMessageContent(TestInputLocationMessageContent.latitude,
-                                       TestInputLocationMessageContent.longitude,
-                                       live_period=TestInputLocationMessageContent.live_period)
+    return InputLocationMessageContent(
+        TestInputLocationMessageContent.latitude,
+        TestInputLocationMessageContent.longitude,
+        live_period=TestInputLocationMessageContent.live_period,
+    )
 
 
-class TestInputLocationMessageContent(object):
+class TestInputLocationMessageContent:
     latitude = -23.691288
     longitude = -46.788279
     live_period = 80
@@ -43,9 +45,30 @@ class TestInputLocationMessageContent(object):
         input_location_message_content_dict = input_location_message_content.to_dict()
 
         assert isinstance(input_location_message_content_dict, dict)
-        assert (input_location_message_content_dict['latitude']
-                == input_location_message_content.latitude)
-        assert (input_location_message_content_dict['longitude']
-                == input_location_message_content.longitude)
-        assert (input_location_message_content_dict['live_period']
-                == input_location_message_content.live_period)
+        assert (
+            input_location_message_content_dict['latitude']
+            == input_location_message_content.latitude
+        )
+        assert (
+            input_location_message_content_dict['longitude']
+            == input_location_message_content.longitude
+        )
+        assert (
+            input_location_message_content_dict['live_period']
+            == input_location_message_content.live_period
+        )
+
+    def test_equality(self):
+        a = InputLocationMessageContent(123, 456, 70)
+        b = InputLocationMessageContent(123, 456, 90)
+        c = InputLocationMessageContent(123, 457, 70)
+        d = Location(123, 456)
+
+        assert a == b
+        assert hash(a) == hash(b)
+
+        assert a != c
+        assert hash(a) != hash(c)
+
+        assert a != d
+        assert hash(a) != hash(d)

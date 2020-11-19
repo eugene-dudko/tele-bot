@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -18,11 +18,17 @@
 # along with this program.  If not, see [http://www.gnu.org/licenses/].
 """This module contains the classes that represent Telegram InputVenueMessageContent."""
 
+from typing import Any
+
 from telegram import InputMessageContent
 
 
 class InputVenueMessageContent(InputMessageContent):
     """Represents the content of a venue message to be sent as the result of an inline query.
+
+    Objects of this class are comparable in terms of equality. Two objects of this class are
+    considered equal, if their :attr:`latitude`, :attr:`longitude` and :attr:`title`
+    are equal.
 
     Attributes:
         latitude (:obj:`float`): Latitude of the location in degrees.
@@ -47,8 +53,16 @@ class InputVenueMessageContent(InputMessageContent):
 
     """
 
-    def __init__(self, latitude, longitude, title, address, foursquare_id=None,
-                 foursquare_type=None, **kwargs):
+    def __init__(
+        self,
+        latitude: float,
+        longitude: float,
+        title: str,
+        address: str,
+        foursquare_id: str = None,
+        foursquare_type: str = None,
+        **_kwargs: Any,
+    ):
         # Required
         self.latitude = latitude
         self.longitude = longitude
@@ -57,3 +71,9 @@ class InputVenueMessageContent(InputMessageContent):
         # Optionals
         self.foursquare_id = foursquare_id
         self.foursquare_type = foursquare_type
+
+        self._id_attrs = (
+            self.latitude,
+            self.longitude,
+            self.title,
+        )

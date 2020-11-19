@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # A library that provides a Python interface to the Telegram Bot API
-# Copyright (C) 2015-2018
+# Copyright (C) 2015-2020
 # Leandro Toledo de Souza <devs@python-telegram-bot.org>
 #
 # This program is free software: you can redistribute it and/or modify
@@ -20,38 +20,83 @@ import datetime
 
 import pytest
 
-from telegram import Message, User, Chat, MessageEntity, Document, Update
-from telegram.ext import Filters, BaseFilter
+from telegram import Message, User, Chat, MessageEntity, Document, Update, Dice
+from telegram.ext import Filters, BaseFilter, MessageFilter, UpdateFilter
 import re
+
+from telegram.utils.deprecate import TelegramDeprecationWarning
 
 
 @pytest.fixture(scope='function')
 def update():
-    return Update(0, Message(0, User(0, 'Testuser', False), datetime.datetime.now(),
-                             Chat(0, 'private')))
+    return Update(
+        0,
+        Message(
+            0,
+            datetime.datetime.utcnow(),
+            Chat(0, 'private'),
+            from_user=User(0, 'Testuser', False),
+            via_bot=User(0, "Testbot", True),
+        ),
+    )
 
 
-@pytest.fixture(scope='function',
-                params=MessageEntity.ALL_TYPES)
+@pytest.fixture(scope='function', params=MessageEntity.ALL_TYPES)
 def message_entity(request):
     return MessageEntity(request.param, 0, 0, url='', user='')
 
 
-class TestFilters(object):
+@pytest.fixture(
+    scope='class',
+    params=[{'class': MessageFilter}, {'class': UpdateFilter}],
+    ids=['MessageFilter', 'UpdateFilter'],
+)
+def base_class(request):
+    return request.param['class']
+
+
+class TestFilters:
     def test_filters_all(self, update):
         assert Filters.all(update)
 
     def test_filters_text(self, update):
         update.message.text = 'test'
-        assert Filters.text(update)
+        assert (Filters.text)(update)
         update.message.text = '/test'
-        assert not Filters.text(update)
+        assert (Filters.text)(update)
 
-    def test_filters_command(self, update):
+    def test_filters_text_strings(self, update):
+        update.message.text = '/test'
+        assert Filters.text({'/test', 'test1'})(update)
+        assert not Filters.text(['test1', 'test2'])(update)
+
+    def test_filters_caption(self, update):
+        update.message.caption = 'test'
+        assert (Filters.caption)(update)
+        update.message.caption = None
+        assert not (Filters.caption)(update)
+
+    def test_filters_caption_strings(self, update):
+        update.message.caption = 'test'
+        assert Filters.caption({'test', 'test1'})(update)
+        assert not Filters.caption(['test1', 'test2'])(update)
+
+    def test_filters_command_default(self, update):
         update.message.text = 'test'
         assert not Filters.command(update)
         update.message.text = '/test'
+        assert not Filters.command(update)
+        # Only accept commands at the beginning
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 3, 5)]
+        assert not Filters.command(update)
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
         assert Filters.command(update)
+
+    def test_filters_command_anywhere(self, update):
+        update.message.text = 'test /cmd'
+        assert not (Filters.command(False))(update)
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 5, 4)]
+        assert (Filters.command(False))(update)
 
     def test_filters_regex(self, update):
         SRE_TYPE = type(re.match("", ""))
@@ -104,6 +149,7 @@ class TestFilters(object):
     def test_filters_merged_with_regex(self, update):
         SRE_TYPE = type(re.match("", ""))
         update.message.text = '/start deep-linked param'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
         result = (Filters.command & Filters.regex(r'linked param'))(update)
         assert result
         assert isinstance(result, dict)
@@ -129,8 +175,9 @@ class TestFilters(object):
     def test_regex_complex_merges(self, update):
         SRE_TYPE = type(re.match("", ""))
         update.message.text = 'test it out'
-        filter = (Filters.regex('test')
-                  & ((Filters.status_update | Filters.forwarded) | Filters.regex('out')))
+        filter = Filters.regex('test') & (
+            (Filters.status_update | Filters.forwarded) | Filters.regex('out')
+        )
         result = filter(update)
         assert result
         assert isinstance(result, dict)
@@ -138,7 +185,7 @@ class TestFilters(object):
         assert isinstance(matches, list)
         assert len(matches) == 2
         assert all([type(res) == SRE_TYPE for res in matches])
-        update.message.forward_date = datetime.datetime.now()
+        update.message.forward_date = datetime.datetime.utcnow()
         result = filter(update)
         assert result
         assert isinstance(result, dict)
@@ -152,7 +199,7 @@ class TestFilters(object):
         matches = result['matches']
         assert isinstance(matches, list)
         assert all([type(res) == SRE_TYPE for res in matches])
-        update.message.forward_date = False
+        update.message.forward_date = None
         result = filter(update)
         assert not result
         update.message.text = 'test it out'
@@ -176,8 +223,9 @@ class TestFilters(object):
         update.message.text = 'test it out'
         update.message.forward_date = None
         update.message.pinned_message = None
-        filter = ((Filters.regex('test') | Filters.command)
-                  & (Filters.regex('it') | Filters.status_update))
+        filter = (Filters.regex('test') | Filters.command) & (
+            Filters.regex('it') | Filters.status_update
+        )
         result = filter(update)
         assert result
         assert isinstance(result, dict)
@@ -200,6 +248,7 @@ class TestFilters(object):
         result = filter(update)
         assert not result
         update.message.text = '/start'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
         result = filter(update)
         assert result
         assert isinstance(result, bool)
@@ -214,6 +263,7 @@ class TestFilters(object):
 
     def test_regex_inverted(self, update):
         update.message.text = '/start deep-linked param'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
         filter = ~Filters.regex(r'deep-linked param')
         result = filter(update)
         assert not result
@@ -222,34 +272,249 @@ class TestFilters(object):
         assert result
         assert isinstance(result, bool)
 
-        filter = (~Filters.regex('linked') & Filters.command)
+        filter = ~Filters.regex('linked') & Filters.command
         update.message.text = "it's linked"
         result = filter(update)
         assert not result
         update.message.text = '/start'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
         result = filter(update)
         assert result
         update.message.text = '/linked'
         result = filter(update)
         assert not result
 
-        filter = (~Filters.regex('linked') | Filters.command)
+        filter = ~Filters.regex('linked') | Filters.command
         update.message.text = "it's linked"
+        update.message.entities = []
         result = filter(update)
         assert not result
         update.message.text = '/start linked'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
         result = filter(update)
         assert result
         update.message.text = '/start'
         result = filter(update)
         assert result
         update.message.text = 'nothig'
+        update.message.entities = []
+        result = filter(update)
+        assert result
+
+    def test_filters_caption_regex(self, update):
+        SRE_TYPE = type(re.match("", ""))
+        update.message.caption = '/start deep-linked param'
+        result = Filters.caption_regex(r'deep-linked param')(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert type(matches[0]) is SRE_TYPE
+        update.message.caption = '/help'
+        assert Filters.caption_regex(r'help')(update)
+
+        update.message.caption = 'test'
+        assert not Filters.caption_regex(r'fail')(update)
+        assert Filters.caption_regex(r'test')(update)
+        assert Filters.caption_regex(re.compile(r'test'))(update)
+        assert Filters.caption_regex(re.compile(r'TEST', re.IGNORECASE))(update)
+
+        update.message.caption = 'i love python'
+        assert Filters.caption_regex(r'.\b[lo]{2}ve python')(update)
+
+        update.message.caption = None
+        assert not Filters.caption_regex(r'fail')(update)
+
+    def test_filters_caption_regex_multiple(self, update):
+        SRE_TYPE = type(re.match("", ""))
+        update.message.caption = '/start deep-linked param'
+        result = (Filters.caption_regex('deep') & Filters.caption_regex(r'linked param'))(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        result = (Filters.caption_regex('deep') | Filters.caption_regex(r'linked param'))(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        result = (Filters.caption_regex('not int') | Filters.caption_regex(r'linked param'))(
+            update
+        )
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        result = (Filters.caption_regex('not int') & Filters.caption_regex(r'linked param'))(
+            update
+        )
+        assert not result
+
+    def test_filters_merged_with_caption_regex(self, update):
+        SRE_TYPE = type(re.match("", ""))
+        update.message.caption = '/start deep-linked param'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
+        result = (Filters.command & Filters.caption_regex(r'linked param'))(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        result = (Filters.caption_regex(r'linked param') & Filters.command)(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        result = (Filters.caption_regex(r'linked param') | Filters.command)(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        # Should not give a match since it's a or filter and it short circuits
+        result = (Filters.command | Filters.caption_regex(r'linked param'))(update)
+        assert result is True
+
+    def test_caption_regex_complex_merges(self, update):
+        SRE_TYPE = type(re.match("", ""))
+        update.message.caption = 'test it out'
+        filter = Filters.caption_regex('test') & (
+            (Filters.status_update | Filters.forwarded) | Filters.caption_regex('out')
+        )
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert len(matches) == 2
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.forward_date = datetime.datetime.utcnow()
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.caption = 'test it'
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.forward_date = None
+        result = filter(update)
+        assert not result
+        update.message.caption = 'test it out'
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.pinned_message = True
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.caption = 'it out'
+        result = filter(update)
+        assert not result
+
+        update.message.caption = 'test it out'
+        update.message.forward_date = None
+        update.message.pinned_message = None
+        filter = (Filters.caption_regex('test') | Filters.command) & (
+            Filters.caption_regex('it') | Filters.status_update
+        )
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert len(matches) == 2
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.caption = 'test'
+        result = filter(update)
+        assert not result
+        update.message.pinned_message = True
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert len(matches) == 1
+        assert all([type(res) == SRE_TYPE for res in matches])
+        update.message.caption = 'nothing'
+        result = filter(update)
+        assert not result
+        update.message.caption = '/start'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
+        result = filter(update)
+        assert result
+        assert isinstance(result, bool)
+        update.message.caption = '/start it'
+        result = filter(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert len(matches) == 1
+        assert all([type(res) == SRE_TYPE for res in matches])
+
+    def test_caption_regex_inverted(self, update):
+        update.message.caption = '/start deep-linked param'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
+        filter = ~Filters.caption_regex(r'deep-linked param')
+        result = filter(update)
+        assert not result
+        update.message.caption = 'not it'
+        result = filter(update)
+        assert result
+        assert isinstance(result, bool)
+
+        filter = ~Filters.caption_regex('linked') & Filters.command
+        update.message.caption = "it's linked"
+        result = filter(update)
+        assert not result
+        update.message.caption = '/start'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
+        result = filter(update)
+        assert result
+        update.message.caption = '/linked'
+        result = filter(update)
+        assert not result
+
+        filter = ~Filters.caption_regex('linked') | Filters.command
+        update.message.caption = "it's linked"
+        update.message.entities = []
+        result = filter(update)
+        assert not result
+        update.message.caption = '/start linked'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 6)]
+        result = filter(update)
+        assert result
+        update.message.caption = '/start'
+        result = filter(update)
+        assert result
+        update.message.caption = 'nothig'
+        update.message.entities = []
         result = filter(update)
         assert result
 
     def test_filters_reply(self, update):
-        another_message = Message(1, User(1, 'TestOther', False), datetime.datetime.now(),
-                                  Chat(0, 'private'))
+        another_message = Message(
+            1,
+            datetime.datetime.utcnow(),
+            Chat(0, 'private'),
+            from_user=User(1, 'TestOther', False),
+        )
         update.message.text = 'test'
         assert not Filters.reply(update)
         update.message.reply_to_message = another_message
@@ -266,8 +531,9 @@ class TestFilters(object):
         assert Filters.document(update)
 
     def test_filters_document_type(self, update):
-        update.message.document = Document("file_id",
-                                           mime_type="application/vnd.android.package-archive")
+        update.message.document = Document(
+            "file_id", 'unique_id', mime_type="application/vnd.android.package-archive"
+        )
         assert Filters.document.apk(update)
         assert Filters.document.application(update)
         assert not Filters.document.doc(update)
@@ -279,8 +545,9 @@ class TestFilters(object):
         assert not Filters.document.docx(update)
         assert not Filters.document.audio(update)
 
-        update.message.document.mime_type = "application/vnd.openxmlformats-officedocument." \
-                                            "wordprocessingml.document"
+        update.message.document.mime_type = (
+            "application/vnd.openxmlformats-officedocument." "wordprocessingml.document"
+        )
         assert Filters.document.docx(update)
         assert Filters.document.application(update)
         assert not Filters.document.exe(update)
@@ -364,6 +631,113 @@ class TestFilters(object):
         update.message.document.mime_type = "application/x-sh"
         assert Filters.document.category("application/")(update)
         assert Filters.document.mime_type("application/x-sh")(update)
+
+    def test_filters_file_extension_basic(self, update):
+        update.message.document = Document(
+            "file_id",
+            "unique_id",
+            file_name="file.jpg",
+            mime_type="image/jpeg",
+        )
+        assert Filters.document.file_extension("jpg")(update)
+        assert not Filters.document.file_extension("jpeg")(update)
+        assert not Filters.document.file_extension("file.jpg")(update)
+
+        update.message.document.file_name = "file.tar.gz"
+        assert Filters.document.file_extension("tar.gz")(update)
+        assert Filters.document.file_extension("gz")(update)
+        assert not Filters.document.file_extension("tgz")(update)
+        assert not Filters.document.file_extension("jpg")(update)
+
+        update.message.document = None
+        assert not Filters.document.file_extension("jpg")(update)
+
+    def test_filters_file_extension_minds_dots(self, update):
+        update.message.document = Document(
+            "file_id",
+            "unique_id",
+            file_name="file.jpg",
+            mime_type="image/jpeg",
+        )
+        assert not Filters.document.file_extension(".jpg")(update)
+        assert not Filters.document.file_extension("e.jpg")(update)
+        assert not Filters.document.file_extension("file.jpg")(update)
+        assert not Filters.document.file_extension("")(update)
+
+        update.message.document.file_name = "file..jpg"
+        assert Filters.document.file_extension("jpg")(update)
+        assert Filters.document.file_extension(".jpg")(update)
+        assert not Filters.document.file_extension("..jpg")(update)
+
+        update.message.document.file_name = "file.docx"
+        assert Filters.document.file_extension("docx")(update)
+        assert not Filters.document.file_extension("doc")(update)
+        assert not Filters.document.file_extension("ocx")(update)
+
+        update.message.document.file_name = "file"
+        assert not Filters.document.file_extension("")(update)
+        assert not Filters.document.file_extension("file")(update)
+
+        update.message.document.file_name = "file."
+        assert Filters.document.file_extension("")(update)
+
+    def test_filters_file_extension_none_arg(self, update):
+        update.message.document = Document(
+            "file_id",
+            "unique_id",
+            file_name="file.jpg",
+            mime_type="image/jpeg",
+        )
+        assert not Filters.document.file_extension(None)(update)
+
+        update.message.document.file_name = "file"
+        assert Filters.document.file_extension(None)(update)
+        assert not Filters.document.file_extension("None")(update)
+
+        update.message.document.file_name = "file."
+        assert not Filters.document.file_extension(None)(update)
+
+        update.message.document = None
+        assert not Filters.document.file_extension(None)(update)
+
+    def test_filters_file_extension_case_sensitivity(self, update):
+        update.message.document = Document(
+            "file_id",
+            "unique_id",
+            file_name="file.jpg",
+            mime_type="image/jpeg",
+        )
+        assert Filters.document.file_extension("JPG")(update)
+        assert Filters.document.file_extension("jpG")(update)
+
+        update.message.document.file_name = "file.JPG"
+        assert Filters.document.file_extension("jpg")(update)
+        assert not Filters.document.file_extension("jpg", case_sensitive=True)(update)
+
+        update.message.document.file_name = "file.Dockerfile"
+        assert Filters.document.file_extension("Dockerfile", case_sensitive=True)(update)
+        assert not Filters.document.file_extension("DOCKERFILE", case_sensitive=True)(update)
+
+    def test_filters_file_extension_name(self):
+        assert Filters.document.file_extension("jpg").name == (
+            "Filters.document.file_extension('jpg')"
+        )
+        assert Filters.document.file_extension("JPG").name == (
+            "Filters.document.file_extension('jpg')"
+        )
+        assert Filters.document.file_extension("jpg", case_sensitive=True).name == (
+            "Filters.document.file_extension('jpg', case_sensitive=True)"
+        )
+        assert Filters.document.file_extension("JPG", case_sensitive=True).name == (
+            "Filters.document.file_extension('JPG', case_sensitive=True)"
+        )
+        assert Filters.document.file_extension(".jpg").name == (
+            "Filters.document.file_extension('.jpg')"
+        )
+        assert Filters.document.file_extension("").name == "Filters.document.file_extension('')"
+        assert (
+            Filters.document.file_extension(None).name == "Filters.document.file_extension(None)"
+        )
 
     def test_filters_animation(self, update):
         assert not Filters.animation(update)
@@ -475,7 +849,7 @@ class TestFilters(object):
 
     def test_filters_forwarded(self, update):
         assert not Filters.forwarded(update)
-        update.message.forward_date = datetime.datetime.now()
+        update.message.forward_date = datetime.datetime.utcnow()
         assert Filters.forwarded(update)
 
     def test_filters_game(self, update):
@@ -516,6 +890,10 @@ class TestFilters(object):
         update.message.chat.type = 'group'
         assert not Filters.private(update)
 
+    def test_private_filter_deprecation(self, update):
+        with pytest.warns(TelegramDeprecationWarning):
+            Filters.private(update)
+
     def test_group_filter(self, update):
         assert not Filters.group(update)
         update.message.chat.type = 'group'
@@ -523,11 +901,36 @@ class TestFilters(object):
         update.message.chat.type = 'supergroup'
         assert Filters.group(update)
 
-    def test_filters_user(self):
-        with pytest.raises(ValueError, match='user_id or username'):
+    def test_group_filter_deprecation(self, update):
+        with pytest.warns(TelegramDeprecationWarning):
+            Filters.group(update)
+
+    @pytest.mark.parametrize(
+        ('chat_type, results'),
+        [
+            (None, (False, False, False, False, False, False)),
+            (Chat.PRIVATE, (True, True, False, False, False, False)),
+            (Chat.GROUP, (True, False, True, False, True, False)),
+            (Chat.SUPERGROUP, (True, False, False, True, True, False)),
+            (Chat.CHANNEL, (True, False, False, False, False, True)),
+        ],
+    )
+    def test_filters_chat_types(self, update, chat_type, results):
+        update.message.chat.type = chat_type
+        assert Filters.chat_type(update) is results[0]
+        assert Filters.chat_type.private(update) is results[1]
+        assert Filters.chat_type.group(update) is results[2]
+        assert Filters.chat_type.supergroup(update) is results[3]
+        assert Filters.chat_type.groups(update) is results[4]
+        assert Filters.chat_type.channel(update) is results[5]
+
+    def test_filters_user_init(self):
+        with pytest.raises(RuntimeError, match='in conjunction with'):
             Filters.user(user_id=1, username='user')
-        with pytest.raises(ValueError, match='user_id or username'):
-            Filters.user()
+
+    def test_filters_user_allow_empty(self, update):
+        assert not Filters.user()(update)
+        assert Filters.user(allow_empty=True)(update)
 
     def test_filters_user_id(self, update):
         assert not Filters.user(user_id=1)(update)
@@ -536,37 +939,272 @@ class TestFilters(object):
         update.message.from_user.id = 2
         assert Filters.user(user_id=[1, 2])(update)
         assert not Filters.user(user_id=[3, 4])(update)
+        update.message.from_user = None
+        assert not Filters.user(user_id=[3, 4])(update)
 
     def test_filters_username(self, update):
         assert not Filters.user(username='user')(update)
         assert not Filters.user(username='Testuser')(update)
-        update.message.from_user.username = 'user'
-        assert Filters.user(username='@user')(update)
-        assert Filters.user(username='user')(update)
-        assert Filters.user(username=['user1', 'user', 'user2'])(update)
+        update.message.from_user.username = 'user@'
+        assert Filters.user(username='@user@')(update)
+        assert Filters.user(username='user@')(update)
+        assert Filters.user(username=['user1', 'user@', 'user2'])(update)
+        assert not Filters.user(username=['@username', '@user_2'])(update)
+        update.message.from_user = None
         assert not Filters.user(username=['@username', '@user_2'])(update)
 
-    def test_filters_chat(self):
-        with pytest.raises(ValueError, match='chat_id or username'):
-            Filters.chat(chat_id=-1, username='chat')
-        with pytest.raises(ValueError, match='chat_id or username'):
-            Filters.chat()
+    def test_filters_user_change_id(self, update):
+        f = Filters.user(user_id=1)
+        update.message.from_user.id = 1
+        assert f(update)
+        update.message.from_user.id = 2
+        assert not f(update)
+        f.user_ids = 2
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.usernames = 'user'
+
+    def test_filters_user_change_username(self, update):
+        f = Filters.user(username='user')
+        update.message.from_user.username = 'user'
+        assert f(update)
+        update.message.from_user.username = 'User'
+        assert not f(update)
+        f.usernames = 'User'
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='user_id in conjunction'):
+            f.user_ids = 1
+
+    def test_filters_user_add_user_by_name(self, update):
+        users = ['user_a', 'user_b', 'user_c']
+        f = Filters.user()
+
+        for user in users:
+            update.message.from_user.username = user
+            assert not f(update)
+
+        f.add_usernames('user_a')
+        f.add_usernames(['user_b', 'user_c'])
+
+        for user in users:
+            update.message.from_user.username = user
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='user_id in conjunction'):
+            f.add_user_ids(1)
+
+    def test_filters_user_add_user_by_id(self, update):
+        users = [1, 2, 3]
+        f = Filters.user()
+
+        for user in users:
+            update.message.from_user.id = user
+            assert not f(update)
+
+        f.add_user_ids(1)
+        f.add_user_ids([2, 3])
+
+        for user in users:
+            update.message.from_user.username = user
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.add_usernames('user')
+
+    def test_filters_user_remove_user_by_name(self, update):
+        users = ['user_a', 'user_b', 'user_c']
+        f = Filters.user(username=users)
+
+        with pytest.raises(RuntimeError, match='user_id in conjunction'):
+            f.remove_user_ids(1)
+
+        for user in users:
+            update.message.from_user.username = user
+            assert f(update)
+
+        f.remove_usernames('user_a')
+        f.remove_usernames(['user_b', 'user_c'])
+
+        for user in users:
+            update.message.from_user.username = user
+            assert not f(update)
+
+    def test_filters_user_remove_user_by_id(self, update):
+        users = [1, 2, 3]
+        f = Filters.user(user_id=users)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.remove_usernames('user')
+
+        for user in users:
+            update.message.from_user.id = user
+            assert f(update)
+
+        f.remove_user_ids(1)
+        f.remove_user_ids([2, 3])
+
+        for user in users:
+            update.message.from_user.username = user
+            assert not f(update)
+
+    def test_filters_user_repr(self):
+        f = Filters.user([1, 2])
+        assert str(f) == 'Filters.user(1, 2)'
+        f.remove_user_ids(1)
+        f.remove_user_ids(2)
+        assert str(f) == 'Filters.user()'
+        f.add_usernames('@foobar')
+        assert str(f) == 'Filters.user(foobar)'
+        f.add_usernames('@barfoo')
+        assert str(f).startswith('Filters.user(')
+        # we don't know th exact order
+        assert 'barfoo' in str(f) and 'foobar' in str(f)
+
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            f.name = 'foo'
+
+    def test_filters_chat_init(self):
+        with pytest.raises(RuntimeError, match='in conjunction with'):
+            Filters.chat(chat_id=1, username='chat')
+
+    def test_filters_chat_allow_empty(self, update):
+        assert not Filters.chat()(update)
+        assert Filters.chat(allow_empty=True)(update)
 
     def test_filters_chat_id(self, update):
-        assert not Filters.chat(chat_id=-1)(update)
-        update.message.chat.id = -1
-        assert Filters.chat(chat_id=-1)(update)
-        update.message.chat.id = -2
-        assert Filters.chat(chat_id=[-1, -2])(update)
-        assert not Filters.chat(chat_id=[-3, -4])(update)
+        assert not Filters.chat(chat_id=1)(update)
+        update.message.chat.id = 1
+        assert Filters.chat(chat_id=1)(update)
+        update.message.chat.id = 2
+        assert Filters.chat(chat_id=[1, 2])(update)
+        assert not Filters.chat(chat_id=[3, 4])(update)
+        update.message.chat = None
+        assert not Filters.chat(chat_id=[3, 4])(update)
 
     def test_filters_chat_username(self, update):
         assert not Filters.chat(username='chat')(update)
+        assert not Filters.chat(username='Testchat')(update)
+        update.message.chat.username = 'chat@'
+        assert Filters.chat(username='@chat@')(update)
+        assert Filters.chat(username='chat@')(update)
+        assert Filters.chat(username=['chat1', 'chat@', 'chat2'])(update)
+        assert not Filters.chat(username=['@username', '@chat_2'])(update)
+        update.message.chat = None
+        assert not Filters.chat(username=['@username', '@chat_2'])(update)
+
+    def test_filters_chat_change_id(self, update):
+        f = Filters.chat(chat_id=1)
+        update.message.chat.id = 1
+        assert f(update)
+        update.message.chat.id = 2
+        assert not f(update)
+        f.chat_ids = 2
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.usernames = 'chat'
+
+    def test_filters_chat_change_username(self, update):
+        f = Filters.chat(username='chat')
         update.message.chat.username = 'chat'
-        assert Filters.chat(username='@chat')(update)
-        assert Filters.chat(username='chat')(update)
-        assert Filters.chat(username=['chat1', 'chat', 'chat2'])(update)
-        assert not Filters.chat(username=['@chat1', 'chat_2'])(update)
+        assert f(update)
+        update.message.chat.username = 'User'
+        assert not f(update)
+        f.usernames = 'User'
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='chat_id in conjunction'):
+            f.chat_ids = 1
+
+    def test_filters_chat_add_chat_by_name(self, update):
+        chats = ['chat_a', 'chat_b', 'chat_c']
+        f = Filters.chat()
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert not f(update)
+
+        f.add_usernames('chat_a')
+        f.add_usernames(['chat_b', 'chat_c'])
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='chat_id in conjunction'):
+            f.add_chat_ids(1)
+
+    def test_filters_chat_add_chat_by_id(self, update):
+        chats = [1, 2, 3]
+        f = Filters.chat()
+
+        for chat in chats:
+            update.message.chat.id = chat
+            assert not f(update)
+
+        f.add_chat_ids(1)
+        f.add_chat_ids([2, 3])
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.add_usernames('chat')
+
+    def test_filters_chat_remove_chat_by_name(self, update):
+        chats = ['chat_a', 'chat_b', 'chat_c']
+        f = Filters.chat(username=chats)
+
+        with pytest.raises(RuntimeError, match='chat_id in conjunction'):
+            f.remove_chat_ids(1)
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert f(update)
+
+        f.remove_usernames('chat_a')
+        f.remove_usernames(['chat_b', 'chat_c'])
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert not f(update)
+
+    def test_filters_chat_remove_chat_by_id(self, update):
+        chats = [1, 2, 3]
+        f = Filters.chat(chat_id=chats)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.remove_usernames('chat')
+
+        for chat in chats:
+            update.message.chat.id = chat
+            assert f(update)
+
+        f.remove_chat_ids(1)
+        f.remove_chat_ids([2, 3])
+
+        for chat in chats:
+            update.message.chat.username = chat
+            assert not f(update)
+
+    def test_filters_chat_repr(self):
+        f = Filters.chat([1, 2])
+        assert str(f) == 'Filters.chat(1, 2)'
+        f.remove_chat_ids(1)
+        f.remove_chat_ids(2)
+        assert str(f) == 'Filters.chat()'
+        f.add_usernames('@foobar')
+        assert str(f) == 'Filters.chat(foobar)'
+        f.add_usernames('@barfoo')
+        assert str(f).startswith('Filters.chat(')
+        # we don't know th exact order
+        assert 'barfoo' in str(f) and 'foobar' in str(f)
+
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            f.name = 'foo'
 
     def test_filters_invoice(self, update):
         assert not Filters.invoice(update)
@@ -582,6 +1220,51 @@ class TestFilters(object):
         assert not Filters.passport_data(update)
         update.message.passport_data = 'test'
         assert Filters.passport_data(update)
+
+    def test_filters_poll(self, update):
+        assert not Filters.poll(update)
+        update.message.poll = 'test'
+        assert Filters.poll(update)
+
+    @pytest.mark.parametrize('emoji', Dice.ALL_EMOJI)
+    def test_filters_dice(self, update, emoji):
+        update.message.dice = Dice(4, emoji)
+        assert Filters.dice(update)
+        update.message.dice = None
+        assert not Filters.dice(update)
+
+    @pytest.mark.parametrize('emoji', Dice.ALL_EMOJI)
+    def test_filters_dice_list(self, update, emoji):
+        update.message.dice = None
+        assert not Filters.dice(5)(update)
+
+        update.message.dice = Dice(5, emoji)
+        assert Filters.dice(5)(update)
+        assert Filters.dice({5, 6})(update)
+        assert not Filters.dice(1)(update)
+        assert not Filters.dice([2, 3])(update)
+
+    def test_filters_dice_type(self, update):
+        update.message.dice = Dice(5, '🎲')
+        assert Filters.dice.dice(update)
+        assert Filters.dice.dice([4, 5])(update)
+        assert not Filters.dice.darts(update)
+        assert not Filters.dice.basketball(update)
+        assert not Filters.dice.dice([6])(update)
+
+        update.message.dice = Dice(5, '🎯')
+        assert Filters.dice.darts(update)
+        assert Filters.dice.darts([4, 5])(update)
+        assert not Filters.dice.dice(update)
+        assert not Filters.dice.basketball(update)
+        assert not Filters.dice.darts([6])(update)
+
+        update.message.dice = Dice(5, '🏀')
+        assert Filters.dice.basketball(update)
+        assert Filters.dice.basketball([4, 5])(update)
+        assert not Filters.dice.dice(update)
+        assert not Filters.dice.darts(update)
+        assert not Filters.dice.basketball([4])(update)
 
     def test_language_filter_single(self, update):
         update.message.from_user.language_code = 'en_US'
@@ -606,16 +1289,16 @@ class TestFilters(object):
 
     def test_and_filters(self, update):
         update.message.text = 'test'
-        update.message.forward_date = datetime.datetime.now()
+        update.message.forward_date = datetime.datetime.utcnow()
         assert (Filters.text & Filters.forwarded)(update)
         update.message.text = '/test'
-        assert not (Filters.text & Filters.forwarded)(update)
+        assert (Filters.text & Filters.forwarded)(update)
         update.message.text = 'test'
         update.message.forward_date = None
         assert not (Filters.text & Filters.forwarded)(update)
 
         update.message.text = 'test'
-        update.message.forward_date = datetime.datetime.now()
+        update.message.forward_date = datetime.datetime.utcnow()
         assert (Filters.text & Filters.forwarded & Filters.private)(update)
 
     def test_or_filters(self, update):
@@ -630,27 +1313,94 @@ class TestFilters(object):
 
     def test_and_or_filters(self, update):
         update.message.text = 'test'
-        update.message.forward_date = datetime.datetime.now()
+        update.message.forward_date = datetime.datetime.utcnow()
         assert (Filters.text & (Filters.status_update | Filters.forwarded))(update)
-        update.message.forward_date = False
+        update.message.forward_date = None
         assert not (Filters.text & (Filters.forwarded | Filters.status_update))(update)
         update.message.pinned_message = True
-        assert (Filters.text & (Filters.forwarded | Filters.status_update)(update))
+        assert Filters.text & (Filters.forwarded | Filters.status_update)(update)
 
-        assert str((Filters.text & (Filters.forwarded | Filters.entity(
-            MessageEntity.MENTION)))) == '<Filters.text and <Filters.forwarded or ' \
-                                         'Filters.entity(mention)>>'
+        assert (
+            str(Filters.text & (Filters.forwarded | Filters.entity(MessageEntity.MENTION)))
+            == '<Filters.text and <Filters.forwarded or '
+            'Filters.entity(mention)>>'
+        )
+
+    def test_xor_filters(self, update):
+        update.message.text = 'test'
+        update.effective_user.id = 123
+        assert not (Filters.text ^ Filters.user(123))(update)
+        update.message.text = None
+        update.effective_user.id = 1234
+        assert not (Filters.text ^ Filters.user(123))(update)
+        update.message.text = 'test'
+        assert (Filters.text ^ Filters.user(123))(update)
+        update.message.text = None
+        update.effective_user.id = 123
+        assert (Filters.text ^ Filters.user(123))(update)
+
+    def test_xor_filters_repr(self, update):
+        assert str(Filters.text ^ Filters.user(123)) == '<Filters.text xor Filters.user(123)>'
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            (Filters.text ^ Filters.user(123)).name = 'foo'
+
+    def test_and_xor_filters(self, update):
+        update.message.text = 'test'
+        update.message.forward_date = datetime.datetime.utcnow()
+        assert (Filters.forwarded & (Filters.text ^ Filters.user(123)))(update)
+        update.message.text = None
+        update.effective_user.id = 123
+        assert (Filters.forwarded & (Filters.text ^ Filters.user(123)))(update)
+        update.message.text = 'test'
+        assert not (Filters.forwarded & (Filters.text ^ Filters.user(123)))(update)
+        update.message.forward_date = None
+        update.message.text = None
+        update.effective_user.id = 123
+        assert not (Filters.forwarded & (Filters.text ^ Filters.user(123)))(update)
+        update.message.text = 'test'
+        update.effective_user.id = 456
+        assert not (Filters.forwarded & (Filters.text ^ Filters.user(123)))(update)
+
+        assert (
+            str(Filters.forwarded & (Filters.text ^ Filters.user(123)))
+            == '<Filters.forwarded and <Filters.text xor '
+            'Filters.user(123)>>'
+        )
+
+    def test_xor_regex_filters(self, update):
+        SRE_TYPE = type(re.match("", ""))
+        update.message.text = 'test'
+        update.message.forward_date = datetime.datetime.utcnow()
+        assert not (Filters.forwarded ^ Filters.regex('^test$'))(update)
+        update.message.forward_date = None
+        result = (Filters.forwarded ^ Filters.regex('^test$'))(update)
+        assert result
+        assert isinstance(result, dict)
+        matches = result['matches']
+        assert isinstance(matches, list)
+        assert type(matches[0]) is SRE_TYPE
+        update.message.forward_date = datetime.datetime.utcnow()
+        update.message.text = None
+        assert (Filters.forwarded ^ Filters.regex('^test$'))(update) is True
 
     def test_inverted_filters(self, update):
         update.message.text = '/test'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
         assert Filters.command(update)
         assert not (~Filters.command)(update)
         update.message.text = 'test'
+        update.message.entities = []
         assert not Filters.command(update)
         assert (~Filters.command)(update)
 
+    def test_inverted_filters_repr(self, update):
+        assert str(~Filters.text) == '<inverted Filters.text>'
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            (~Filters.text).name = 'foo'
+
     def test_inverted_and_filters(self, update):
         update.message.text = '/test'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
         update.message.forward_date = 1
         assert (Filters.forwarded & Filters.command)(update)
         assert not (~Filters.forwarded & Filters.command)(update)
@@ -662,6 +1412,7 @@ class TestFilters(object):
         assert not (Filters.forwarded & ~Filters.command)(update)
         assert (~(Filters.forwarded & Filters.command))(update)
         update.message.text = 'test'
+        update.message.entities = []
         assert not (Filters.forwarded & Filters.command)(update)
         assert not (~Filters.forwarded & Filters.command)(update)
         assert not (Filters.forwarded & ~Filters.command)(update)
@@ -671,13 +1422,11 @@ class TestFilters(object):
         class _CustomFilter(BaseFilter):
             pass
 
-        custom = _CustomFilter()
+        with pytest.raises(TypeError, match='Can\'t instantiate abstract class _CustomFilter'):
+            _CustomFilter()
 
-        with pytest.raises(NotImplementedError):
-            (custom & Filters.text)(update)
-
-    def test_custom_unnamed_filter(self, update):
-        class Unnamed(BaseFilter):
+    def test_custom_unnamed_filter(self, update, base_class):
+        class Unnamed(base_class):
             def filter(self, mes):
                 return True
 
@@ -723,13 +1472,14 @@ class TestFilters(object):
         assert Filters.update.channel_posts(update)
         assert Filters.update(update)
 
-    def test_merged_short_circuit_and(self, update):
+    def test_merged_short_circuit_and(self, update, base_class):
         update.message.text = '/test'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
 
         class TestException(Exception):
             pass
 
-        class RaisingFilter(BaseFilter):
+        class RaisingFilter(base_class):
             def filter(self, _):
                 raise TestException
 
@@ -739,15 +1489,20 @@ class TestFilters(object):
             (Filters.command & raising_filter)(update)
 
         update.message.text = 'test'
+        update.message.entities = []
         (Filters.command & raising_filter)(update)
 
-    def test_merged_short_circuit_or(self, update):
+    def test_merged_filters_repr(self, update):
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            (Filters.text & Filters.photo).name = 'foo'
+
+    def test_merged_short_circuit_or(self, update, base_class):
         update.message.text = 'test'
 
         class TestException(Exception):
             pass
 
-        class RaisingFilter(BaseFilter):
+        class RaisingFilter(base_class):
             def filter(self, _):
                 raise TestException
 
@@ -757,12 +1512,14 @@ class TestFilters(object):
             (Filters.command | raising_filter)(update)
 
         update.message.text = '/test'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
         (Filters.command | raising_filter)(update)
 
-    def test_merged_data_merging_and(self, update):
+    def test_merged_data_merging_and(self, update, base_class):
         update.message.text = '/test'
+        update.message.entities = [MessageEntity(MessageEntity.BOT_COMMAND, 0, 5)]
 
-        class DataFilter(BaseFilter):
+        class DataFilter(base_class):
             data_filter = True
 
             def __init__(self, data):
@@ -778,13 +1535,14 @@ class TestFilters(object):
         assert result['test'] == ['blah1', 'blah2']
 
         update.message.text = 'test'
+        update.message.entities = []
         result = (Filters.command & DataFilter('blah'))(update)
         assert not result
 
-    def test_merged_data_merging_or(self, update):
+    def test_merged_data_merging_or(self, update, base_class):
         update.message.text = '/test'
 
-        class DataFilter(BaseFilter):
+        class DataFilter(base_class):
             data_filter = True
 
             def __init__(self, data):
@@ -802,3 +1560,144 @@ class TestFilters(object):
         update.message.text = 'test'
         result = (Filters.command | DataFilter('blah'))(update)
         assert result['test'] == ['blah']
+
+    def test_filters_via_bot_init(self):
+        with pytest.raises(RuntimeError, match='in conjunction with'):
+            Filters.via_bot(bot_id=1, username='bot')
+
+    def test_filters_via_bot_allow_empty(self, update):
+        assert not Filters.via_bot()(update)
+        assert Filters.via_bot(allow_empty=True)(update)
+
+    def test_filters_via_bot_id(self, update):
+        assert not Filters.via_bot(bot_id=1)(update)
+        update.message.via_bot.id = 1
+        assert Filters.via_bot(bot_id=1)(update)
+        update.message.via_bot.id = 2
+        assert Filters.via_bot(bot_id=[1, 2])(update)
+        assert not Filters.via_bot(bot_id=[3, 4])(update)
+        update.message.via_bot = None
+        assert not Filters.via_bot(bot_id=[3, 4])(update)
+
+    def test_filters_via_bot_username(self, update):
+        assert not Filters.via_bot(username='bot')(update)
+        assert not Filters.via_bot(username='Testbot')(update)
+        update.message.via_bot.username = 'bot@'
+        assert Filters.via_bot(username='@bot@')(update)
+        assert Filters.via_bot(username='bot@')(update)
+        assert Filters.via_bot(username=['bot1', 'bot@', 'bot2'])(update)
+        assert not Filters.via_bot(username=['@username', '@bot_2'])(update)
+        update.message.via_bot = None
+        assert not Filters.user(username=['@username', '@bot_2'])(update)
+
+    def test_filters_via_bot_change_id(self, update):
+        f = Filters.via_bot(bot_id=3)
+        update.message.via_bot.id = 3
+        assert f(update)
+        update.message.via_bot.id = 2
+        assert not f(update)
+        f.bot_ids = 2
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.usernames = 'user'
+
+    def test_filters_via_bot_change_username(self, update):
+        f = Filters.via_bot(username='bot')
+        update.message.via_bot.username = 'bot'
+        assert f(update)
+        update.message.via_bot.username = 'Bot'
+        assert not f(update)
+        f.usernames = 'Bot'
+        assert f(update)
+
+        with pytest.raises(RuntimeError, match='bot_id in conjunction'):
+            f.bot_ids = 1
+
+    def test_filters_via_bot_add_user_by_name(self, update):
+        users = ['bot_a', 'bot_b', 'bot_c']
+        f = Filters.via_bot()
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert not f(update)
+
+        f.add_usernames('bot_a')
+        f.add_usernames(['bot_b', 'bot_c'])
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='bot_id in conjunction'):
+            f.add_bot_ids(1)
+
+    def test_filters_via_bot_add_user_by_id(self, update):
+        users = [1, 2, 3]
+        f = Filters.via_bot()
+
+        for user in users:
+            update.message.via_bot.id = user
+            assert not f(update)
+
+        f.add_bot_ids(1)
+        f.add_bot_ids([2, 3])
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert f(update)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.add_usernames('bot')
+
+    def test_filters_via_bot_remove_user_by_name(self, update):
+        users = ['bot_a', 'bot_b', 'bot_c']
+        f = Filters.via_bot(username=users)
+
+        with pytest.raises(RuntimeError, match='bot_id in conjunction'):
+            f.remove_bot_ids(1)
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert f(update)
+
+        f.remove_usernames('bot_a')
+        f.remove_usernames(['bot_b', 'bot_c'])
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert not f(update)
+
+    def test_filters_via_bot_remove_user_by_id(self, update):
+        users = [1, 2, 3]
+        f = Filters.via_bot(bot_id=users)
+
+        with pytest.raises(RuntimeError, match='username in conjunction'):
+            f.remove_usernames('bot')
+
+        for user in users:
+            update.message.via_bot.id = user
+            assert f(update)
+
+        f.remove_bot_ids(1)
+        f.remove_bot_ids([2, 3])
+
+        for user in users:
+            update.message.via_bot.username = user
+            assert not f(update)
+
+    def test_filters_via_bot_repr(self):
+        f = Filters.via_bot([1, 2])
+        assert str(f) == 'Filters.via_bot(1, 2)'
+        f.remove_bot_ids(1)
+        f.remove_bot_ids(2)
+        assert str(f) == 'Filters.via_bot()'
+        f.add_usernames('@foobar')
+        assert str(f) == 'Filters.via_bot(foobar)'
+        f.add_usernames('@barfoo')
+        assert str(f).startswith('Filters.via_bot(')
+        # we don't know th exact order
+        assert 'barfoo' in str(f) and 'foobar' in str(f)
+
+        with pytest.raises(RuntimeError, match='Cannot set name'):
+            f.name = 'foo'
